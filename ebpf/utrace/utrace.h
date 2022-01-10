@@ -11,6 +11,17 @@
 SEC("uprobe/utrace")
 int uprobe_utrace(void *ctx)
 {
+    u64 pid_tgid = bpf_get_current_pid_tgid();
+    u32 pid = pid_tgid >> 32;
+    u32 filter_user_binary = load_filter_user_binary();
+    if (filter_user_binary) {
+        // check if this pid is traced
+        u32 *traced = bpf_map_lookup_elem(&traced_pids, &pid);
+        if (traced == NULL) {
+            return 0;
+        }
+    }
+
     // hits counter
     u32 func_id = load_func_id();
     struct counter_t *counter = bpf_map_lookup_elem(&counters, &func_id);
@@ -53,6 +64,18 @@ SEC("uretprobe/utrace")
 int uretprobe_utrace(void *ctx)
 {
     u64 now = bpf_ktime_get_ns();
+
+    u64 pid_tgid = bpf_get_current_pid_tgid();
+    u32 pid = pid_tgid >> 32;
+    u32 filter_user_binary = load_filter_user_binary();
+    if (filter_user_binary) {
+        // check if this pid is traced
+        u32 *traced = bpf_map_lookup_elem(&traced_pids, &pid);
+        if (traced == NULL) {
+            return 0;
+        }
+    }
+
     // hits counter
     u32 func_id = load_func_id();
     struct counter_t *counter = bpf_map_lookup_elem(&counters, &func_id);

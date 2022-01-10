@@ -355,6 +355,15 @@ func (u *UTrace) generateUProbes() error {
 				probe.ProbeIdentificationPair,
 			},
 		})
+		if len(u.options.Binary) > 0 || u.options.PIDFilter > 0 {
+			constantEditors = append(constantEditors, manager.ConstantEditor{
+				Name:  "filter_user_binary",
+				Value: uint64(1),
+				ProbeIdentificationPairs: []manager.ProbeIdentificationPair{
+					probe.GetIdentificationPair(),
+				},
+			})
+		}
 
 		if u.options.Latency {
 			retProbe := &manager.Probe{
