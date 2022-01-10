@@ -12,3 +12,5 @@ require (
 	golang.org/x/crypto v0.0.0-20200622213623-75b288015ac9
 	golang.org/x/sys v0.0.0-20210921065528-437939a70204
 )
+
+replace github.com/DataDog/ebpf-manager => ../ebpf-manager
