@@ -360,7 +360,7 @@ func (u *UTrace) generateUProbes() error {
 				Name:  "filter_user_binary",
 				Value: uint64(1),
 				ProbeIdentificationPairs: []manager.ProbeIdentificationPair{
-					probe.GetIdentificationPair(),
+					probe.ProbeIdentificationPair,
 				},
 			})
 		}
