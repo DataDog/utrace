@@ -303,7 +303,7 @@ func (u *UTrace) generateUProbes() error {
 		return err
 	}
 
-	// from the entire list of symbols, only keep the functions that match the provided pattern
+    // from the entire list of symbols, only keep the functions that match the provided pattern
 	var matches []elf.Symbol
 	for _, sym := range syms {
 		u.symbolsCache[SymbolAddr(sym.Value)] = sym
