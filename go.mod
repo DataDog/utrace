@@ -11,6 +11,7 @@ require (
 	github.com/spf13/cobra v1.1.1
 	golang.org/x/crypto v0.0.0-20200622213623-75b288015ac9
 	golang.org/x/sys v0.0.0-20210921065528-437939a70204
+	github.com/google/pprof v0.0.0-20210423192551-a2663126120b
 )
 
 replace github.com/DataDog/ebpf-manager => ../ebpf-manager
