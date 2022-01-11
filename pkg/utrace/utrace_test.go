@@ -1,14 +1,15 @@
 package utrace
 
 import (
+	"debug/elf"
 	"fmt"
-	"os"
 	"github.com/stretchr/testify/require"
+	"os"
 	"strings"
 	"testing"
 
+	manager "github.com/DataDog/ebpf-manager"
 	"github.com/DataDog/gopsutil/process"
-	//manager "github.com/DataDog/ebpf-manager"
 )
 
 func ListProcmaps(pid int) (*[]process.MemoryMapsStat, error) {
@@ -25,18 +26,46 @@ func ListProcmaps(pid int) (*[]process.MemoryMapsStat, error) {
 		if m.Permission.Execute && !strings.HasPrefix(m.Path, "[") {
 			fmt.Print(m, "\n")
 			filteredProcMaps = append(filteredProcMaps, m)
-		}		
+		}
 	}
 
 	return &filteredProcMaps, nil
 }
 
-func ListSymbols(procMaps *[]process.MemoryMapsStat) (error) {
+func ListSymbols(procMaps *[]process.MemoryMapsStat, symbolsCache map[SymbolAddr]elf.Symbol) error {
+	for _, m := range *procMaps {
+		_, syms, err := manager.OpenAndListSymbols(m.Path)
+		if err != nil {
+			fmt.Println("[error] ListSymbols: Skipping", m.Path)
+			continue
+		}
+		fmt.Println("Start: ", m.StartAddr, ", end:", m.EndAddr, ", offset:", m.Offset)
+
+		// from the entire list of symbols, only keep the functions that match the provided pattern
+		for _, sym := range syms {
+			if len(sym.Version) > 0 {
+				// skip dynamic symbols
+				continue
+			}
+
+			if sym.Value < m.Offset {
+				// errors we still need to understand
+				fmt.Println("[error] ListSymbols:  Skipping symbol", sym)
+				continue
+			}
+			addr := SymbolAddr(sym.Value) - SymbolAddr(m.Offset) + SymbolAddr(m.StartAddr)
+			symbolsCache[addr] = sym
+		}
+	}
+
 	return nil
 }
 
 func TestListSymbols(t *testing.T) {
 	pid := os.Getpid()
-	_, err := ListProcmaps(pid)
+	procMaps, err := ListProcmaps(pid)
 	require.NoError(t, err)
+	symbolsCache := make(map[SymbolAddr]elf.Symbol)
+	ListSymbols(procMaps, symbolsCache)
+	fmt.Println("map:", symbolsCache)
 }
