@@ -45,6 +45,8 @@ func ListSymbolsFromProcMaps(procMaps *[]process.MemoryMapsStat, symbols *[]Symb
 		}
 		fmt.Printf("Processing %50s, Start: %x, End: 0x%x, Offset: 0x%x\n", m.Path, m.StartAddr, m.EndAddr, m.Offset)
 
+		seenSymbols := make(map[string]bool)
+
 		// from the entire list of symbols, only keep the functions that match the provided pattern
 		for _, sym := range syms {
 			if len(sym.Version) > 0 {
@@ -56,7 +58,6 @@ func ListSymbolsFromProcMaps(procMaps *[]process.MemoryMapsStat, symbols *[]Symb
 			for _, prog := range f.Progs {
 				if prog.Type == elf.PT_LOAD {
 					if value >= prog.Vaddr && value < (prog.Vaddr+prog.Memsz) {
-						// fmt.Printf("Adjusting %s address from 0x%x to 0x%x\n", sym.Name, sym.Value, sym.Value - prog.Vaddr + prog.Off)
 						value = sym.Value - prog.Vaddr + prog.Off
 					}
 				}
@@ -67,10 +68,13 @@ func ListSymbolsFromProcMaps(procMaps *[]process.MemoryMapsStat, symbols *[]Symb
 				fmt.Println("[error] ListSymbols:  Skipping symbol", sym)
 				continue
 			}
-
-			// fmt.Printf("Symbol: %s, Addr: %x, MapStartAdr: %x, MapOffset: %x\n", sym.Name, sym.Value, m.StartAddr, m.Offset)
-			processAddr := SymbolAddr(sym.Value) - SymbolAddr(m.Offset) + SymbolAddr(m.StartAddr)
-			*symbols = append(*symbols, SymbolInfo{sym, m.Path, processAddr, SymbolAddr(value)})
+			
+			if !seenSymbols[sym.Name] {
+				// a symbol might be present in both standard and dynamic symbols
+				processAddr := SymbolAddr(value) - SymbolAddr(m.Offset) + SymbolAddr(m.StartAddr)
+				*symbols = append(*symbols, SymbolInfo{sym, m.Path, processAddr, SymbolAddr(value)})
+				seenSymbols[sym.Name] = true
+			}
 		}
 	}
 

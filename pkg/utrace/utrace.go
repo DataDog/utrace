@@ -315,9 +315,6 @@ func (u *UTrace) generateUProbes() error {
     // from the entire list of symbols, only keep the functions that match the provided pattern
 	var matches []SymbolInfo
 	for _, symInfo := range syms {
-		if symInfo.Symbol.Name == "func" {
-			fmt.Printf("Symbol %s, ProcessAdrr: 0x%x\n", symInfo.Name,symInfo.ProcessAddr)
-		}
 		u.symbolsCache[SymbolAddr(symInfo.ProcessAddr)] = symInfo.Symbol
 
 		if u.options.FuncPattern != nil {
@@ -352,6 +349,7 @@ func (u *UTrace) generateUProbes() error {
 			BinaryPath:    sym.Path,
 			UprobeOffset:  uint64(sym.FileOffset),
 			MatchFuncName: fmt.Sprintf(`^%s$`, escapedName),
+			PerfEventPID:  u.options.PIDFilter,
 		}
 		logrus.Printf("Installing uprobe on %s at 0x%x with binary %s\n", sym.Name, sym.Value, probe.BinaryPath)
 		u.manager.Probes = append(u.manager.Probes, probe)
@@ -386,6 +384,7 @@ func (u *UTrace) generateUProbes() error {
 				BinaryPath:    u.options.Binary,
 				UprobeOffset:  sym.Value,
 				MatchFuncName: fmt.Sprintf(`^%s$`, escapedName),
+				PerfEventPID:  u.options.PIDFilter,
 			}
 			u.manager.Probes = append(u.manager.Probes, retProbe)
 			oneOfSelector.Selectors = append(oneOfSelector.Selectors, &manager.ProbeSelector{
@@ -646,6 +645,7 @@ func (u *UTrace) TraceEventsHandler(Cpu int, data []byte, perfMap *manager.PerfM
 
 	// resolve user stack trace
 	for _, addr := range userTrace {
+		fmt.Printf("addr: %x\n", addr)
 		if addr == 0 {
 			break
 		}
