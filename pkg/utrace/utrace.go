@@ -296,21 +296,54 @@ func (u *UTrace) start() error {
 	return nil
 }
 
+// SanitizeUprobeAddresses - sanitizes the addresses of the provided symbols
+func SanitizeUprobeAddresses(f *elf.File, sym *elf.Symbol) {
+	// If the binary is a non-PIE executable, addr must be a virtual address, otherwise it must be an offset relative to
+	// the file load address. For executable (ET_EXEC) binaries and shared objects (ET_DYN), translate the virtual
+	// address to physical address in the binary file.
+	if f.Type == elf.ET_EXEC || f.Type == elf.ET_DYN {
+		for _, prog := range f.Progs {
+			if prog.Type == elf.PT_LOAD {
+				if sym.Value >= prog.Vaddr && sym.Value < (prog.Vaddr+prog.Memsz) {
+					fmt.Printf("Adjusting %s address from 0x%x to 0x%x\n", sym.Name, sym.Value, sym.Value - prog.Vaddr + prog.Off)
+					// In PIE, Vaddr == Off
+					// In non-PIE, Value,Vaddr -> Address at runtime
+					sym.Value = sym.Value - prog.Vaddr + prog.Off
+				}
+			}
+		}		
+	}
+}
+
 func (u *UTrace) generateUProbes() error {
 	// fetch the list of symbols in the provided binary
-	f, syms, err := manager.OpenAndListSymbols(u.options.Binary)
+	if u.options.PIDFilter == 0 {		
+		return errors.New("No PID was provided")
+	}
+	
+	syms, err := ListSymbolsFromPID(u.options.PIDFilter)
 	if err != nil {
 		return err
 	}
 
+	// f, syms, err := manager.OpenAndListSymbols(u.options.Binary)
+	// if err != nil {
+	// 	return err
+	// }
+
     // from the entire list of symbols, only keep the functions that match the provided pattern
-	var matches []elf.Symbol
-	for _, sym := range syms {
-		u.symbolsCache[SymbolAddr(sym.Value)] = sym
+	var matches []SymbolInfo
+	for _, symInfo := range syms {
+		if symInfo.Symbol.Name == "bar" {
+			fmt.Printf("Symbol %s, ProcessAdrr: 0x%x\n", symInfo.Symbol.Name,symInfo.ProcessAddr)
+		}
+		u.symbolsCache[SymbolAddr(symInfo.ProcessAddr)] = symInfo.Symbol
 
 		if u.options.FuncPattern != nil {
-			if elf.ST_TYPE(sym.Info) == elf.STT_FUNC && u.options.FuncPattern.MatchString(sym.Name) {
-				matches = append(matches, sym)
+			if elf.ST_TYPE(symInfo.Symbol.Info) == elf.STT_FUNC && u.options.FuncPattern.MatchString(symInfo.Symbol.Name) {
+				matches = append(matches, symInfo)
+				// relocate the function address with the base address of the binary
+				SanitizeUprobeAddresses(symInfo.File, &matches[len(matches)-1].Symbol)
 			}
 		}
 	}
@@ -319,31 +352,30 @@ func (u *UTrace) generateUProbes() error {
 		return nil
 	}
 
-	// relocate the function address with the base address of the binary
-	manager.SanitizeUprobeAddresses(f, matches)
-
 	if uint32(len(matches)) > MaxUserSymbolsCount {
 		logrus.Warnf("%d symbols matched the provided pattern, only the first %d symbols will be traced.", len(matches), MaxUserSymbolsCount)
 		matches = matches[0:MaxUserSymbolsCount]
 	}
-
+	
 	// configure a probe for each symbol we're going to hook onto
 	var oneOfSelector manager.OneOf
 	var constantEditors []manager.ConstantEditor
-	for _, sym := range matches {
+	for _, symInfo := range matches {
+		sym := symInfo.Symbol
 		escapedName := sanitizeFuncName(sym.Name)
 		funcID := u.nextFuncID()
 		probe := &manager.Probe{
 			ProbeIdentificationPair: manager.ProbeIdentificationPair{
-				UID:          escapedName,
+				UID:          escapedName + sanitizeFuncName(symInfo.Path),
 				EBPFSection:  "uprobe/utrace",
 				EBPFFuncName: "uprobe_utrace",
 			},
 			CopyProgram:   true,
-			BinaryPath:    u.options.Binary,
+			BinaryPath:    symInfo.Path,
 			UprobeOffset:  sym.Value,
 			MatchFuncName: fmt.Sprintf(`^%s$`, escapedName),
 		}
+		logrus.Printf("Installing uprobe on %s at 0x%x with binary %s\n", sym.Name, sym.Value, probe.BinaryPath)
 		u.manager.Probes = append(u.manager.Probes, probe)
 		oneOfSelector.Selectors = append(oneOfSelector.Selectors, &manager.ProbeSelector{
 			ProbeIdentificationPair: probe.ProbeIdentificationPair,

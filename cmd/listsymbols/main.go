@@ -23,9 +23,9 @@ func main() {
 		os.Exit(1)
 	}
 
-	for _, symInfo := range *symbols {
+	for _, symInfo := range symbols {
 		if elf.ST_TYPE(symInfo.Symbol.Info) == elf.STT_FUNC {
-			fmt.Printf("addr: %x, file: %s sym:", symInfo.Offset, symInfo.Path)
+			fmt.Printf("addr: %x, file: %s sym:", symInfo.ProcessAddr, symInfo.Path)
 			fmt.Println(symInfo.Symbol, int(symInfo.Symbol.Section))
 		}
 	}
