@@ -10,10 +10,10 @@ import (
 )
 
 type SymbolInfo struct {
-	Symbol elf.Symbol
-	File   *elf.File
+	elf.Symbol
 	Path   string
 	ProcessAddr SymbolAddr
+	FileOffset  SymbolAddr
 }
 
 func ListProcMaps(pid int) (*[]process.MemoryMapsStat, error) {
@@ -52,24 +52,25 @@ func ListSymbolsFromProcMaps(procMaps *[]process.MemoryMapsStat, symbols *[]Symb
 				continue
 			}
 
-			if sym.Value < m.Offset {
+			value := sym.Value
+			for _, prog := range f.Progs {
+				if prog.Type == elf.PT_LOAD {
+					if value >= prog.Vaddr && value < (prog.Vaddr+prog.Memsz) {
+						// fmt.Printf("Adjusting %s address from 0x%x to 0x%x\n", sym.Name, sym.Value, sym.Value - prog.Vaddr + prog.Off)
+						value = sym.Value - prog.Vaddr + prog.Off
+					}
+				}
+			}
+
+			if value < m.Offset {
 				// errors we still need to understand
 				fmt.Println("[error] ListSymbols:  Skipping symbol", sym)
 				continue
 			}
 
-			for _, prog := range f.Progs {
-				if prog.Type == elf.PT_LOAD {
-					if sym.Value >= prog.Vaddr && sym.Value < (prog.Vaddr+prog.Memsz) {
-						//fmt.Printf("Adjusting %s address from 0x%x to 0x%x\n", sym.Name, sym.Value, sym.Value - prog.Vaddr + prog.Off)
-						sym.Value = sym.Value - prog.Vaddr + prog.Off
-					}
-				}
-			}
-
 			// fmt.Printf("Symbol: %s, Addr: %x, MapStartAdr: %x, MapOffset: %x\n", sym.Name, sym.Value, m.StartAddr, m.Offset)
-			addr := SymbolAddr(sym.Value) - SymbolAddr(m.Offset) + SymbolAddr(m.StartAddr)
-			*symbols = append(*symbols, SymbolInfo{sym, f, m.Path, addr})
+			processAddr := SymbolAddr(sym.Value) - SymbolAddr(m.Offset) + SymbolAddr(m.StartAddr)
+			*symbols = append(*symbols, SymbolInfo{sym, m.Path, processAddr, SymbolAddr(value)})
 		}
 	}
 
