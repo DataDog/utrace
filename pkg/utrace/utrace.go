@@ -645,7 +645,6 @@ func (u *UTrace) TraceEventsHandler(Cpu int, data []byte, perfMap *manager.PerfM
 
 	// resolve user stack trace
 	for _, addr := range userTrace {
-		fmt.Printf("addr: %x\n", addr)
 		if addr == 0 {
 			break
 		}
