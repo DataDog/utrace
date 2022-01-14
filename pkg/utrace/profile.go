@@ -39,8 +39,12 @@ func CreateAllocationPProf(stackTraces []*StackTrace) (*profile.Profile, error) 
 		p = &profile.Profile{
 			TimeNanos: time.Now().UnixNano(),
 			SampleType: []*profile.ValueType{{
-				Type: "samples",
+				Type: "alloc_objects",
 				Unit: "count",
+			},
+			{
+				Type: "alloc_space",
+				Unit: "bytes",
 			}},
 			// Without his, Delta.Convert() fails in profile.Merge(). Perhaps an
 			// issue that's worth reporting upstream.
@@ -53,14 +57,11 @@ func CreateAllocationPProf(stackTraces []*StackTrace) (*profile.Profile, error) 
 	m := &profile.Mapping{ID: 1, HasFunctions: true}
 	p.Mapping = []*profile.Mapping{m}
 
-	// If we want to add a new sample type
-	// add the sample types
-	// p.SampleType = append(p.SampleType, &profile.ValueType{Type: "alloc_space", Unit: "bytes"})
-
 	for _, stackTrace := range stackTraces {
 		sample := &profile.Sample{}
 		// sample values should match what was initialized as sample types up top
 		sample.Value = append(sample.Value, int64(stackTrace.Count))
+		sample.Value = append(sample.Value, int64(stackTrace.Value))
 
 		for _, stackTraceNode := range stackTrace.UserStacktrace {
 			pprofFuncId, ok := pprofFunctions[stackTraceNode.Symbol.Name]
