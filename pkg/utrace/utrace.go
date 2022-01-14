@@ -29,8 +29,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/DataDog/ebpf"
-	"github.com/DataDog/ebpf/manager"
+	manager "github.com/DataDog/ebpf-manager"
+	"github.com/cilium/ebpf"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/sys/unix"
@@ -148,8 +148,11 @@ func (u *UTrace) nextFuncID() FuncID {
 
 func (u *UTrace) setupDefaultManager() {
 	execTracepoint := &manager.Probe{
-		UID:     "utrace",
-		Section: "tracepoint/sched/sched_process_exec",
+		ProbeIdentificationPair: manager.ProbeIdentificationPair{
+			UID:          "utrace",
+			EBPFSection:  "tracepoint/sched/sched_process_exec",
+			EBPFFuncName: "tracepoint_sched_sched_process_exec",
+		},
 	}
 	u.manager = &manager.Manager{
 		Probes: []*manager.Probe{execTracepoint},
@@ -169,7 +172,7 @@ func (u *UTrace) setupDefaultManager() {
 	u.managerOptions.ActivatedProbes = append(u.managerOptions.ActivatedProbes, &manager.OneOf{
 		Selectors: []manager.ProbesSelector{
 			&manager.ProbeSelector{
-				ProbeIdentificationPair: execTracepoint.GetIdentificationPair(),
+				ProbeIdentificationPair: execTracepoint.ProbeIdentificationPair,
 			},
 		},
 	})
@@ -295,19 +298,28 @@ func (u *UTrace) start() error {
 
 func (u *UTrace) generateUProbes() error {
 	// fetch the list of symbols in the provided binary
-	f, syms, err := manager.OpenAndListSymbols(u.options.Binary)
+	if u.options.PIDFilter == 0 {		
+		return errors.New("No PID was provided")
+	}
+	
+	syms, err := ListSymbolsFromPID(u.options.PIDFilter)
 	if err != nil {
 		return err
 	}
 
-	// from the entire list of symbols, only keep the functions that match the provided pattern
-	var matches []elf.Symbol
-	for _, sym := range syms {
-		u.symbolsCache[SymbolAddr(sym.Value)] = sym
+	// f, syms, err := manager.OpenAndListSymbols(u.options.Binary)
+	// if err != nil {
+	// 	return err
+	// }
+
+    // from the entire list of symbols, only keep the functions that match the provided pattern
+	var matches []SymbolInfo
+	for _, symInfo := range syms {
+		u.symbolsCache[SymbolAddr(symInfo.ProcessAddr)] = symInfo.Symbol
 
 		if u.options.FuncPattern != nil {
-			if elf.ST_TYPE(sym.Info) == elf.STT_FUNC && u.options.FuncPattern.MatchString(sym.Name) {
-				matches = append(matches, sym)
+			if elf.ST_TYPE(symInfo.Info) == elf.STT_FUNC && u.options.FuncPattern.MatchString(symInfo.Name) {
+				matches = append(matches, symInfo)
 			}
 		}
 	}
@@ -316,14 +328,11 @@ func (u *UTrace) generateUProbes() error {
 		return nil
 	}
 
-	// relocate the function address with the base address of the binary
-	manager.SanitizeUprobeAddresses(f, matches)
-
 	if uint32(len(matches)) > MaxUserSymbolsCount {
 		logrus.Warnf("%d symbols matched the provided pattern, only the first %d symbols will be traced.", len(matches), MaxUserSymbolsCount)
 		matches = matches[0:MaxUserSymbolsCount]
 	}
-
+	
 	// configure a probe for each symbol we're going to hook onto
 	var oneOfSelector manager.OneOf
 	var constantEditors []manager.ConstantEditor
@@ -331,48 +340,66 @@ func (u *UTrace) generateUProbes() error {
 		escapedName := sanitizeFuncName(sym.Name)
 		funcID := u.nextFuncID()
 		probe := &manager.Probe{
-			UID:           escapedName,
-			Section:       "uprobe/utrace",
+			ProbeIdentificationPair: manager.ProbeIdentificationPair{
+				UID:          escapedName + sanitizeFuncName(sym.Path),
+				EBPFSection:  "uprobe/utrace",
+				EBPFFuncName: "uprobe_utrace",
+			},
 			CopyProgram:   true,
-			BinaryPath:    u.options.Binary,
-			UprobeOffset:  sym.Value,
+			BinaryPath:    sym.Path,
+			UprobeOffset:  uint64(sym.FileOffset),
 			MatchFuncName: fmt.Sprintf(`^%s$`, escapedName),
+			PerfEventPID:  u.options.PIDFilter,
 		}
+		logrus.Printf("Installing uprobe on %s at 0x%x with binary %s\n", sym.Name, sym.Value, probe.BinaryPath)
 		u.manager.Probes = append(u.manager.Probes, probe)
 		oneOfSelector.Selectors = append(oneOfSelector.Selectors, &manager.ProbeSelector{
-			ProbeIdentificationPair: probe.GetIdentificationPair(),
+			ProbeIdentificationPair: probe.ProbeIdentificationPair,
 		})
 		constantEditors = append(constantEditors, manager.ConstantEditor{
 			Name:  "func_id",
 			Value: uint64(funcID),
 			ProbeIdentificationPairs: []manager.ProbeIdentificationPair{
-				probe.GetIdentificationPair(),
+				probe.ProbeIdentificationPair,
 			},
 		})
+		if len(u.options.Binary) > 0 || u.options.PIDFilter > 0 {
+			constantEditors = append(constantEditors, manager.ConstantEditor{
+				Name:  "filter_user_binary",
+				Value: uint64(1),
+				ProbeIdentificationPairs: []manager.ProbeIdentificationPair{
+					probe.ProbeIdentificationPair,
+				},
+			})
+		}
 
 		if u.options.Latency {
 			retProbe := &manager.Probe{
-				UID:           escapedName,
-				Section:       "uretprobe/utrace",
+				ProbeIdentificationPair: manager.ProbeIdentificationPair{
+					UID:          escapedName,
+					EBPFSection:  "uretprobe/utrace",
+					EBPFFuncName: "uretprobe_utrace",
+				},
 				CopyProgram:   true,
 				BinaryPath:    u.options.Binary,
 				UprobeOffset:  sym.Value,
 				MatchFuncName: fmt.Sprintf(`^%s$`, escapedName),
+				PerfEventPID:  u.options.PIDFilter,
 			}
 			u.manager.Probes = append(u.manager.Probes, retProbe)
 			oneOfSelector.Selectors = append(oneOfSelector.Selectors, &manager.ProbeSelector{
-				ProbeIdentificationPair: retProbe.GetIdentificationPair(),
+				ProbeIdentificationPair: retProbe.ProbeIdentificationPair,
 			})
 			constantEditors = append(constantEditors, manager.ConstantEditor{
 				Name:  "func_id",
 				Value: uint64(funcID),
 				ProbeIdentificationPairs: []manager.ProbeIdentificationPair{
-					retProbe.GetIdentificationPair(),
+					retProbe.ProbeIdentificationPair,
 				},
 			})
 		}
 
-		u.matchingFuncCache[funcID] = sym
+		u.matchingFuncCache[funcID] = sym.Symbol
 		u.symbolNameToFuncID[sym.Name] = funcID
 	}
 
@@ -448,20 +475,23 @@ func (u *UTrace) generateKProbes() error {
 		escapedName := sanitizeFuncName(sym.Name)
 		funcID := u.nextFuncID()
 		probe := &manager.Probe{
-			UID:           escapedName,
-			Section:       "kprobe/utrace",
+			ProbeIdentificationPair: manager.ProbeIdentificationPair{
+				UID:          escapedName,
+				EBPFSection:  "kprobe/utrace",
+				EBPFFuncName: "kprobe_utrace",
+			},
 			CopyProgram:   true,
 			MatchFuncName: fmt.Sprintf(`^%s$`, escapedName),
 		}
 		u.manager.Probes = append(u.manager.Probes, probe)
 		oneOfSelector.Selectors = append(oneOfSelector.Selectors, &manager.ProbeSelector{
-			ProbeIdentificationPair: probe.GetIdentificationPair(),
+			ProbeIdentificationPair: probe.ProbeIdentificationPair,
 		})
 		constantEditors = append(constantEditors, manager.ConstantEditor{
 			Name:  "func_id",
 			Value: uint64(funcID),
 			ProbeIdentificationPairs: []manager.ProbeIdentificationPair{
-				probe.GetIdentificationPair(),
+				probe.ProbeIdentificationPair,
 			},
 		})
 		if len(u.options.Binary) > 0 || u.options.PIDFilter > 0 {
@@ -469,27 +499,30 @@ func (u *UTrace) generateKProbes() error {
 				Name:  "filter_user_binary",
 				Value: uint64(1),
 				ProbeIdentificationPairs: []manager.ProbeIdentificationPair{
-					probe.GetIdentificationPair(),
+					probe.ProbeIdentificationPair,
 				},
 			})
 		}
 
 		if u.options.Latency {
 			retProbe := &manager.Probe{
-				UID:           escapedName,
-				Section:       "kretprobe/utrace",
+				ProbeIdentificationPair: manager.ProbeIdentificationPair{
+					UID:          escapedName,
+					EBPFSection:  "kretprobe/utrace",
+					EBPFFuncName: "kretprobe_utrace",
+				},
 				CopyProgram:   true,
 				MatchFuncName: fmt.Sprintf(`^%s$`, escapedName),
 			}
 			u.manager.Probes = append(u.manager.Probes, retProbe)
 			oneOfSelector.Selectors = append(oneOfSelector.Selectors, &manager.ProbeSelector{
-				ProbeIdentificationPair: retProbe.GetIdentificationPair(),
+				ProbeIdentificationPair: retProbe.ProbeIdentificationPair,
 			})
 			constantEditors = append(constantEditors, manager.ConstantEditor{
 				Name:  "func_id",
 				Value: uint64(funcID),
 				ProbeIdentificationPairs: []manager.ProbeIdentificationPair{
-					retProbe.GetIdentificationPair(),
+					retProbe.ProbeIdentificationPair,
 				},
 			})
 			if len(u.options.Binary) > 0 || u.options.PIDFilter > 0 {
@@ -497,7 +530,7 @@ func (u *UTrace) generateKProbes() error {
 					Name:  "filter_user_binary",
 					Value: uint64(1),
 					ProbeIdentificationPairs: []manager.ProbeIdentificationPair{
-						retProbe.GetIdentificationPair(),
+						retProbe.ProbeIdentificationPair,
 					},
 				})
 			}
