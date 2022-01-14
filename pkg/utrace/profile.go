@@ -11,11 +11,24 @@ import (
 // Thanks @felixge
 
 func (u *UTrace) DumpProfile(w io.Writer) error {
+	var stackTraces []*StackTrace
+	for _, funcStackTraces := range u.matchingFuncStackTraces {
+		for _, stackTrace := range funcStackTraces {
+			stackTraces = append(stackTraces, stackTrace)
+		}
+	}
+	profile, err := CreateAllocationPProf(stackTraces)
+	if err != nil {
+		return err
+	}
+
+	profile.Write(w)
+
 	return nil
 }
 
 // assumption is that the map contains all the call stacks
-func CreateAllocationPProf(allocationMap map[CombinedID]*StackTrace) (*profile.Profile, error) {
+func CreateAllocationPProf(stackTraces []*StackTrace) (*profile.Profile, error) {
 	// TODO : fill this as file names
 	//		Name:     "heap",
 	//   	Filename: "heap.pprof",
@@ -44,7 +57,7 @@ func CreateAllocationPProf(allocationMap map[CombinedID]*StackTrace) (*profile.P
 	// add the sample types
 	// p.SampleType = append(p.SampleType, &profile.ValueType{Type: "alloc_space", Unit: "bytes"})
 
-	for _, stackTrace := range allocationMap {
+	for _, stackTrace := range stackTraces {
 		sample := &profile.Sample{}
 		// sample values should match what was initialized as sample types up top
 		sample.Value = append(sample.Value, int64(stackTrace.Count))
@@ -62,29 +75,6 @@ func CreateAllocationPProf(allocationMap map[CombinedID]*StackTrace) (*profile.P
 			}
 			p.Function = append(p.Function, function)
 
-			location := &profile.Location{
-				ID:      pprofFuncId,
-				Mapping: m,
-				Line:    []profile.Line{{Function: function}},
-			}
-
-			p.Location = append(p.Location, location)
-
-			sample.Location = append(sample.Location, location)
-		}
-		for _, stackTraceNode := range stackTrace.KernelStackTrace {
-			pprofFuncId, ok := pprofFunctions[stackTraceNode.Symbol.Name]
-			if !ok {
-				pprofFuncId = functionID
-				functionID++
-				pprofFunctions[stackTraceNode.Symbol.Name] = pprofFuncId
-			}
-
-			function := &profile.Function{
-				ID:   pprofFuncId,
-				Name: stackTraceNode.Symbol.Name,
-			}
-			p.Function = append(p.Function, function)
 			location := &profile.Location{
 				ID:      pprofFuncId,
 				Mapping: m,
