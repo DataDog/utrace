@@ -38,14 +38,15 @@ func CreateAllocationPProf(stackTraces []*StackTrace) (*profile.Profile, error) 
 		// locationID = uint64(1)
 		p = &profile.Profile{
 			TimeNanos: time.Now().UnixNano(),
-			SampleType: []*profile.ValueType{{
-				Type: "alloc_objects",
-				Unit: "count",
-			},
-			{
-				Type: "alloc_space",
-				Unit: "bytes",
-			}},
+			SampleType: []*profile.ValueType{
+				{
+					Type: "alloc_objects",
+					Unit: "count",
+				},
+				{
+					Type: "alloc_space",
+					Unit: "bytes",
+				}},
 			// Without his, Delta.Convert() fails in profile.Merge(). Perhaps an
 			// issue that's worth reporting upstream.
 			PeriodType: &profile.ValueType{},
@@ -79,6 +80,7 @@ func CreateAllocationPProf(stackTraces []*StackTrace) (*profile.Profile, error) 
 			location := &profile.Location{
 				ID:      pprofFuncId,
 				Mapping: m,
+				Address: stackTraceNode.Symbol.Value,
 				Line:    []profile.Line{{Function: function}},
 			}
 
