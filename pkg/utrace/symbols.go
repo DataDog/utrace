@@ -28,7 +28,6 @@ func ListProcMaps(pid int) (*[]process.MemoryMapsStat, error) {
 	filteredProcMaps := []process.MemoryMapsStat{}
 	for _, m := range *procMaps {
 		if m.Permission.Execute && !strings.HasPrefix(m.Path, "[") {
-			fmt.Print(m, "\n")
 			filteredProcMaps = append(filteredProcMaps, m)
 		}
 	}
@@ -43,7 +42,7 @@ func ListSymbolsFromProcMaps(procMaps *[]process.MemoryMapsStat, symbols *[]Symb
 			fmt.Println("[error] ListSymbols: Skipping", m.Path)
 			continue
 		}
-		fmt.Printf("Processing %50s, Start: %x, End: 0x%x, Offset: 0x%x\n", m.Path, m.StartAddr, m.EndAddr, m.Offset)
+		//fmt.Printf("Processing %50s, Start: %x, End: 0x%x, Offset: 0x%x\n", m.Path, m.StartAddr, m.EndAddr, m.Offset)
 
 		seenSymbols := make(map[string]bool)
 
@@ -65,7 +64,7 @@ func ListSymbolsFromProcMaps(procMaps *[]process.MemoryMapsStat, symbols *[]Symb
 
 			if value < m.Offset {
 				// errors we still need to understand
-				fmt.Println("[error] ListSymbols:  Skipping symbol", sym)
+				//fmt.Println("[error] ListSymbols:  Skipping symbol", sym)
 				continue
 			}
 			
