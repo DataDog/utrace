@@ -1,6 +1,7 @@
 package utrace
 
 import (
+	"io"
 	"time"
 
 	"github.com/google/pprof/profile"
@@ -8,6 +9,10 @@ import (
 
 // Inspired from https://github.com/felixge/pprofutils/blob/main/internal/legacy/text.go#L34
 // Thanks @felixge
+
+func (u *UTrace) DumpProfile(w io.Writer) error {
+	return nil
+}
 
 // assumption is that the map contains all the call stacks
 func CreateAllocationPProf(allocationMap map[CombinedID]*StackTrace) (*profile.Profile, error) {

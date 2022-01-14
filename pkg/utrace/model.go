@@ -222,6 +222,7 @@ func (obl orderByLatency) Less(i, j int) bool { return obl[i].AverageLatency > o
 // StackTrace contains the ordered list of symbols of a stack trace
 type StackTrace struct {
 	Count            int
+	Value            int64
 	UserStacktrace   []StackTraceNode
 	KernelStackTrace []StackTraceNode
 }
@@ -276,7 +277,7 @@ func (te *TraceEvent) UnmarshalBinary(data []byte) (int, error) {
 	te.KernelStackID = StackID(ByteOrder.Uint32(data[12:16]))
 	te.ParentIP = ByteOrder.Uint64(data[16:24])
 	te.Arg1 = ByteOrder.Uint64(data[24:32])
-	te.Arg1 = ByteOrder.Uint64(data[32:40])
+	te.Arg2 = ByteOrder.Uint64(data[32:40])
 	te.FuncID = FuncID(ByteOrder.Uint32(data[40:44]))
 	return 48, nil
 }

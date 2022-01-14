@@ -308,7 +308,7 @@ func dumpStackTraces(report utrace.Report) error {
 		fmt.Printf("\nDumping stack traces for symbol %v:\n", f.Symbol.Name)
 
 		for stackID, trace := range f.GetStackTracesByHits() {
-			fmt.Printf("\t* Stack %d [%d hit(s)]\n", stackID, trace.Count)
+			fmt.Printf("\t* Stack %d [%d hit(s)] [%d value]\n", stackID, trace.Count, trace.Value)
 			if _, err = d.WriteString(fmt.Sprintf("%d;", trace.Count)); err != nil {
 				return err
 			}

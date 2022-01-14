@@ -381,8 +381,8 @@ func (u *UTrace) generateUProbes() error {
 					EBPFFuncName: "uretprobe_utrace",
 				},
 				CopyProgram:   true,
-				BinaryPath:    u.options.Binary,
-				UprobeOffset:  sym.Value,
+				BinaryPath:    sym.Path,
+				UprobeOffset:  uint64(sym.FileOffset),
 				MatchFuncName: fmt.Sprintf(`^%s$`, escapedName),
 				PerfEventPID:  u.options.PIDFilter,
 			}
@@ -632,23 +632,37 @@ func (u *UTrace) TraceEventsHandler(Cpu int, data []byte, perfMap *manager.PerfM
 		u.matchingFuncStackTraces[evt.FuncID] = stackTraces
 	}
 
+	symbolName := u.matchingFuncCache[evt.FuncID].Name
+	var value int64 =  0
+	if symbolName == "malloc" {
+		value = int64(evt.Arg1)
+	} else if symbolName == "calloc" {
+		value = int64(evt.Arg1) * int64(evt.Arg2)
+	} else if symbolName == "realloc" {
+		value = int64(evt.Arg2)
+	}
+
 	// only resolve the stack trace if this is a new one
+	// combine UserStackID with ParentIP to create a new ID, addition might not be the best way...
 	userStackID := evt.UserStackID + StackID(evt.ParentIP)
 	combinedID := CombinedID(userStackID)<<32 + CombinedID(evt.KernelStackID)
 	stackTrace, ok := stackTraces[combinedID]
 	if ok {
 		stackTrace.Count += 1
+		stackTrace.Value += value
 		return
 	}
 
 	// create new stack trace
 	stackTrace = NewStackTrace(1)
+	stackTrace.Value = value
 
 	// resolve user stack trace
 	for idx, addr := range userTrace {
 		if addr == 0 {
 			break
 		}
+		// insert missing caller
 		if idx == 1 && evt.ParentIP > 0 {
 			stackTrace.UserStacktrace = append(stackTrace.UserStacktrace, u.ResolveUserSymbolAndOffset(SymbolAddr(evt.ParentIP)))		
 		}
