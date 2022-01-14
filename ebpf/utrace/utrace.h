@@ -9,7 +9,7 @@
 #define _UTRACE_H_
 
 SEC("uprobe/utrace")
-int uprobe_utrace(void *ctx)
+int uprobe_utrace(struct pt_regs *ctx)
 {
     // hits counter
     u32 func_id = load_func_id();
@@ -21,20 +21,24 @@ int uprobe_utrace(void *ctx)
     __sync_fetch_and_add(&counter->count, 1);
 
     // store entry timestamp
-    struct start_ts_key_t key = {
-        .func_id = func_id,
-        .pid = bpf_get_current_pid_tgid(),
-    };
-    u64 ts = bpf_ktime_get_ns();
-    bpf_map_update_elem(&start_ts, &key, &ts, BPF_ANY);
+    // struct start_ts_key_t key = {
+    //      .func_id = func_id,
+    //      .pid = bpf_get_current_pid_tgid(),
+    // };
+    // u64 ts = bpf_ktime_get_ns();
+    // bpf_map_update_elem(&start_ts, &key, &ts, BPF_ANY);
 
     // fetch stack trace
     u32 send_stack_trace = load_send_stack_trace();
     if (send_stack_trace) {
         struct trace_event_t evt = {};
-        evt.pid = key.pid,
-        evt.func_id = key.func_id,
+        evt.pid = bpf_get_current_pid_tgid(),
+        evt.func_id = func_id,
         evt.user_stack_id = bpf_get_stackid(ctx, &stack_traces, BPF_F_FAST_STACK_CMP | BPF_F_USER_STACK | BPF_F_REUSE_STACKID);
+
+        evt.arg1 = ctx->di;
+        evt.arg2 = ctx->si;
+        bpf_probe_read(&evt.parent_ip, sizeof(u64), (void*)ctx->sp);
 
         u32 cpu = bpf_get_smp_processor_id();
         int ret = bpf_perf_event_output(ctx, &trace_events, cpu, &evt, sizeof(evt));

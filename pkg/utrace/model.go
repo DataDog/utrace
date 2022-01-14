@@ -258,12 +258,15 @@ type TraceEvent struct {
 	Tid           uint32
 	UserStackID   StackID
 	KernelStackID StackID
+	ParentIP      uint64
+	Arg1          uint64
+	Arg2          uint64
 	FuncID        FuncID
 }
 
 // UnmarshalBinary unmarshals the binary representation of a trace event
 func (te *TraceEvent) UnmarshalBinary(data []byte) (int, error) {
-	if len(data) < 24 {
+	if len(data) < 48 {
 		return 0, NotEnoughDataErr
 	}
 
@@ -271,6 +274,9 @@ func (te *TraceEvent) UnmarshalBinary(data []byte) (int, error) {
 	te.Tid = ByteOrder.Uint32(data[4:8])
 	te.UserStackID = StackID(ByteOrder.Uint32(data[8:12]))
 	te.KernelStackID = StackID(ByteOrder.Uint32(data[12:16]))
-	te.FuncID = FuncID(ByteOrder.Uint32(data[16:20]))
-	return 24, nil
+	te.ParentIP = ByteOrder.Uint64(data[16:24])
+	te.Arg1 = ByteOrder.Uint64(data[24:32])
+	te.Arg1 = ByteOrder.Uint64(data[32:40])
+	te.FuncID = FuncID(ByteOrder.Uint32(data[40:44]))
+	return 48, nil
 }

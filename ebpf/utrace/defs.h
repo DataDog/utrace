@@ -82,6 +82,9 @@ struct trace_event_t {
     u64 pid;
     u32 user_stack_id;
     u32 kernel_stack_id;
+    u64 parent_ip;
+    u64 arg1;
+    u64 arg2;
     u32 func_id;
 };
 

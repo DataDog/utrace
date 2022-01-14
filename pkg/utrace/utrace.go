@@ -633,7 +633,8 @@ func (u *UTrace) TraceEventsHandler(Cpu int, data []byte, perfMap *manager.PerfM
 	}
 
 	// only resolve the stack trace if this is a new one
-	combinedID := CombinedID(evt.UserStackID)<<32 + CombinedID(evt.KernelStackID)
+	userStackID := evt.UserStackID + StackID(evt.ParentIP)
+	combinedID := CombinedID(userStackID)<<32 + CombinedID(evt.KernelStackID)
 	stackTrace, ok := stackTraces[combinedID]
 	if ok {
 		stackTrace.Count += 1
@@ -644,9 +645,12 @@ func (u *UTrace) TraceEventsHandler(Cpu int, data []byte, perfMap *manager.PerfM
 	stackTrace = NewStackTrace(1)
 
 	// resolve user stack trace
-	for _, addr := range userTrace {
+	for idx, addr := range userTrace {
 		if addr == 0 {
 			break
+		}
+		if idx == 1 && evt.ParentIP > 0 {
+			stackTrace.UserStacktrace = append(stackTrace.UserStacktrace, u.ResolveUserSymbolAndOffset(SymbolAddr(evt.ParentIP)))		
 		}
 		stackTrace.UserStacktrace = append(stackTrace.UserStacktrace, u.ResolveUserSymbolAndOffset(addr))
 	}
