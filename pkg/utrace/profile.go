@@ -1,6 +1,7 @@
 package utrace
 
 import (
+	"fmt"
 	"io"
 	"time"
 
@@ -53,7 +54,7 @@ func CreateAllocationPProf(stackTraces []*StackTrace) (*profile.Profile, error) 
 		}
 	)
 
-	pprofFunctions := make(map[string]uint64)
+	pprofLocations := make(map[FuncID]*profile.Location)
 
 	m := &profile.Mapping{ID: 1, HasFunctions: true}
 	p.Mapping = []*profile.Mapping{m}
@@ -65,32 +66,37 @@ func CreateAllocationPProf(stackTraces []*StackTrace) (*profile.Profile, error) 
 		sample.Value = append(sample.Value, int64(stackTrace.Value))
 
 		for _, stackTraceNode := range stackTrace.UserStacktrace {
-			pprofFuncId, ok := pprofFunctions[stackTraceNode.Symbol.Name]
+			currentLocation, ok := pprofLocations[stackTraceNode.FuncID]
 			if !ok {
-				pprofFuncId = functionID
+				fmt.Println("Creating loc for ", stackTraceNode.Symbol.Name)
+
+				currentFunc := &profile.Function{
+					ID:   functionID,
+					Name: stackTraceNode.Symbol.Name,
+				}
+				p.Function = append(p.Function, currentFunc)
+
+				currentLocation = &profile.Location{
+					ID:      functionID,
+					Mapping: m,
+					Address: stackTraceNode.Symbol.Value,
+					Line:    []profile.Line{{Function: p.Function[len(p.Function)-1]}},
+				}
 				functionID++
-				pprofFunctions[stackTraceNode.Symbol.Name] = pprofFuncId
-			}
-			function := &profile.Function{
-				ID:   pprofFuncId,
-				Name: stackTraceNode.Symbol.Name,
-			}
-			p.Function = append(p.Function, function)
 
-			location := &profile.Location{
-				ID:      pprofFuncId,
-				Mapping: m,
-				Address: stackTraceNode.Symbol.Value,
-				Line:    []profile.Line{{Function: function}},
+				p.Location = append(p.Location, currentLocation)
+				// cache this location
+				pprofLocations[stackTraceNode.FuncID] = currentLocation
 			}
+			fmt.Println("Adding ", currentLocation)
 
-			p.Location = append(p.Location, location)
-
-			sample.Location = append(sample.Location, location)
+			sample.Location = append(sample.Location, currentLocation)
 		}
 
 		// append this sample
 		p.Sample = append(p.Sample, sample)
+		p.CheckValid()
 	}
+
 	return p, nil
 }
