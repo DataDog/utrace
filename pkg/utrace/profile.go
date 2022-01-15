@@ -54,7 +54,7 @@ func CreateAllocationPProf(stackTraces []*StackTrace) (*profile.Profile, error) 
 		}
 	)
 
-	pprofLocations := make(map[FuncID]*profile.Location)
+	pprofLocations := make(map[string]*profile.Location)
 
 	m := &profile.Mapping{ID: 1, HasFunctions: true}
 	p.Mapping = []*profile.Mapping{m}
@@ -66,7 +66,8 @@ func CreateAllocationPProf(stackTraces []*StackTrace) (*profile.Profile, error) 
 		sample.Value = append(sample.Value, int64(stackTrace.Value))
 
 		for _, stackTraceNode := range stackTrace.UserStacktrace {
-			currentLocation, ok := pprofLocations[stackTraceNode.FuncID]
+			// TODO : make this more robust. Hashing on symbol name is not enough
+			currentLocation, ok := pprofLocations[stackTraceNode.Symbol.Name]
 			if !ok {
 				fmt.Println("Creating loc for ", stackTraceNode.Symbol.Name)
 
@@ -86,9 +87,8 @@ func CreateAllocationPProf(stackTraces []*StackTrace) (*profile.Profile, error) 
 
 				p.Location = append(p.Location, currentLocation)
 				// cache this location
-				pprofLocations[stackTraceNode.FuncID] = currentLocation
+				pprofLocations[stackTraceNode.Symbol.Name] = currentLocation
 			}
-			fmt.Println("Adding ", currentLocation)
 
 			sample.Location = append(sample.Location, currentLocation)
 		}
